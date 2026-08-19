@@ -1,10 +1,17 @@
 // Verify the write tool now accepts a JSON object for `content`.
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { realpathSync, rmSync, readFileSync, mkdtempSync } from "node:fs";
+import { rmSync, readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
-const dist = dirname(realpathSync(execFileSync("which",["pi"]).toString().trim()));
+// Ask npm where the package lives rather than shelling out to `which`/`where`,
+// which are not Windows programs (and `where pi` would resolve to the .cmd
+// shim, not dist). Same resolution as scripts/pi-patch.
+const npmRoot = execFileSync("npm", ["root", "-g"], {
+  encoding: "utf8",
+  shell: process.platform === "win32",
+}).trim();
+const dist = join(npmRoot, "@earendil-works", "pi-coding-agent", "dist");
 const { createWriteToolDefinition } = await import(pathToFileURL(join(dist,"core","tools","write.js")).href);
 
 const dir = mkdtempSync(join(tmpdir(),"wc-"));

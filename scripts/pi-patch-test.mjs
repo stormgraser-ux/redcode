@@ -42,9 +42,18 @@ if (typeof hook !== "function") {
   process.exit(1);
 }
 
-const model = session.model;
-console.log(`model: ${model?.id} ctx=${model?.contextWindow?.toLocaleString()}`);
-const win = model?.contextWindow ?? 0;
+let model = session.model;
+if (!model?.contextWindow) {
+    // A fresh machine has no usable model configured (no provider key, or a
+    // provider only known to extensions this bare session does not load).
+    // The hook under test reads exactly one thing off the session's model —
+    // contextWindow — so hand it one. `session.model` is a getter over
+    // agent.state.model; setModel() is not an option, it validates auth.
+    model = { id: "synthetic", contextWindow: 204800 };
+    session.agent.state.model = model;
+}
+console.log(`model: ${model.id} ctx=${model.contextWindow.toLocaleString()}`);
+const win = model.contextWindow;
 const reserve = 16384;
 const threshold = win - reserve;
 console.log(`threshold: ${threshold.toLocaleString()}`);

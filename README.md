@@ -93,7 +93,7 @@ Two things to know:
 - **Blast-radius guardrails are Unix-path-shaped.** The protected-prefix list is `/etc`, `/usr`, `/home` and friends. On a Windows path they simply do not match, so nothing is blocked. Treat the guardrails as absent on Windows until that is fixed — the rest of the profile is unaffected.
 - **`install.sh --link` may quietly copy instead.** Git Bash only makes real symlinks with `MSYS=winsymlinks:nativestrict` and Windows developer mode enabled, and it exits 0 either way. The installer checks and tells you when this happened; if it did, re-run `./install.sh` after each `git pull`.
 
-Honest caveat: this has been verified by reading pi's Windows code paths and by removing every POSIX-only assumption from redcode's own scripts — not by running it on a Windows machine. If you are the first to try it, please open an issue with whatever breaks.
+Fresh-Windows verification: `.github/workflows/windows-smoke.yml` runs the whole install — `npm i -g pi`, `install.sh` under Git Bash, unit tests, `pi-patch`, and one full `pi --mode json` round trip — on a pristine Windows image per run, against the bundled mock server; a manual variant joins your tailnet and hits your real model. See [docs/windows-ci.md](docs/windows-ci.md). If something still breaks on a real machine, please open an issue with whatever breaks.
 
 Everything else — the theme, `/connect`, modes, the todo list, the compaction bar, the patch — is plain Node and portable. `scripts/pi-patch` resolves pi through `npm root -g` rather than `which`, because a Node script on Windows runs against the Windows PATH even when launched from Git Bash.
 
@@ -144,6 +144,9 @@ Anything OpenAI-compatible works — llama.cpp's server, vLLM, NInfer.
 npm install        # types only; nothing is compiled
 npm test           # unit tests for every extension
 npm run patch:check
+./scripts/windows-smoke.sh install   # rehearsal: profile install, tests, patch check
+./scripts/windows-smoke.sh smoke     # + one full round trip via the bundled mock
+node scripts/mock-openai.mjs         # the mock server alone, on any port
 ```
 
 There is no test framework by design. Each test file is a plain script that counts assertions and exits non-zero, running under bare `node --experimental-strip-types`. pi loads `.ts` extensions directly through jiti, so there is no build step either.
