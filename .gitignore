@@ -1,0 +1,7 @@
+node_modules/
+*.log
+
+# Never commit an endpoint or a key. redcode.json lives in ~/.pi/agent, not
+# here, but this is cheap insurance against someone copying one in to test.
+redcode.json
+*.key

@@ -1,0 +1,157 @@
+# redcode
+
+The crimson profile for the [pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent): a theme, a set of extensions, and a `/connect` command that points pi at a private OpenAI-compatible model server.
+
+**This repository contains no models, no endpoints, and no keys.** It is the client side only. To use it you need a base URL and an API key from whoever runs the server. Without those, redcode installs fine and does nothing useful.
+
+Works on Linux, macOS, and Windows (see [Windows](#windows)).
+
+---
+
+## Install
+
+```bash
+npm install -g @earendil-works/pi-coding-agent
+git clone https://github.com/stormgraser-ux/redcode.git
+cd redcode
+./install.sh
+```
+
+Then start it and connect:
+
+```bash
+./bin/redcode
+```
+
+```
+/connect
+```
+
+`/connect` asks for two things — the endpoint URL and the API key — checks them against the live server before saving anything, and writes them to `~/.pi/agent/redcode.json` with owner-only permissions. Then pick your model with `/model`.
+
+You type the key into a dialog box, not into the chat, so it never enters the session transcript and is never sent to a model.
+
+If the probe fails, `/connect` says which layer failed — DNS, connection refused, timeout, or a rejected key — rather than a generic error. Nothing is saved on a failure, so a stored key is always one that worked at least once.
+
+### Other commands
+
+| Command | Does |
+|---|---|
+| `/connect` | Add an endpoint (interactive) |
+| `/connect status` | List endpoints, redacted keys, and whether each is currently answering |
+| `/disconnect` | Remove an endpoint and its stored key |
+
+`install.sh --link` symlinks instead of copying, so `git pull` updates the profile live. `install.sh --uninstall` removes it and restores whatever it displaced.
+
+---
+
+## What you get
+
+**`/connect`** — private model endpoints, described above.
+
+**Modes on shift+tab** — normal / discussion / plan. Discussion withholds the editing tools so you can think out loud without the agent quietly rewriting your files. Plan mode investigates, asks you the real judgement calls as dialogs, then writes a plan to `.pi/plans/` and offers to implement it in a fresh session.
+
+**A visible plan checklist** (`redcode-todo`) whose steps cannot silently move. The failure it exists for: an agent writes a six-step plan, does step one, and then quietly re-scopes the rest.
+
+**A compaction progress bar** with an elapsed timer and a time-remaining estimate. Against a local model compaction routinely runs 60–120 seconds, and pi's built-in spinner gives you no way to tell a slow compaction from a wedged one. The bar is a *fitted prediction*, not a token count — summarization bypasses the agent loop, so only the start and the end are observable from an extension. It calibrates itself against your last dozen compactions.
+
+**Blast-radius guardrails** — a destructive command is judged by how much it can destroy, measured as path depth below an anchor like your home or project directory, not by which tool ran it. `rm -rf ~/code` is refused, `rm -rf ~/code/project/build` runs. This never prompts: prompt fatigue is the failure mode it is designed around. *Unix paths only for now — see [Windows](#windows).*
+
+**A clickable "jump to latest" button** when you have scrolled back.
+
+**`/effort`** to change the thinking level in one keystroke, offering only the levels your model actually accepts. An unsupported reasoning level returns a 400 that pi silently retries, so the turn **hangs** rather than erroring — the filter is what makes that impossible.
+
+**`/cd`** moves a live session to another project directory with its full history: tools, AGENTS.md, skills, and trust all rebind. Set `REDCODE_PROJECTS` if your projects do not live in `~/code`.
+
+**Muscle-memory aliases** — `/clear` and `/exit` for people arriving from Claude Code. Additive; pi's `/new` and `/quit` keep working.
+
+**Smaller things** — bash tool calls collapse under ctrl+o like every other tool; the agent is told its bash tool already runs in the working directory, which stops it prefixing `cd <cwd> &&` onto most commands; per-request payload sizes are logged so you can see what is actually filling your context.
+
+### The pi patch
+
+`scripts/pi-patch` fixes one real bug: **pi never tests the compaction threshold during a tool-calling chain.**
+
+It checks in two places — after a whole agent run finishes, and when you submit. A long tool chain reaches neither, so context climbs unchecked until the request no longer fits. Measured on a 204,800-token session: sixteen consecutive tool-use messages ran 187,191 → 200,896 tokens, straight past the 188,416 threshold, and the turn died with `stopReason: "length"`. pi recovers by compacting and retrying, so nothing is lost — but a full generation is thrown away every time it happens.
+
+The patch hooks `shouldStopAfterTurn`, which the agent loop already calls after every turn inside a chain, and ends the run cleanly so the existing auto-compaction path runs and the chain resumes by itself.
+
+`bin/redcode` re-applies it on every launch, because an npm upgrade silently reverts it. Already-patched is a string search costing milliseconds. A backup is kept next to each patched file, and `scripts/pi-patch --revert` restores it.
+
+Run `npm run patch:test` after upgrading pi — it exercises the patched code path against the real installed pi.
+
+---
+
+## Windows
+
+pi supports Windows and **requires a bash shell** there. [Git for Windows](https://git-scm.com/download/win) is enough; pi finds `C:\Program Files\Git\bin\bash.exe` automatically, or you can point `shellPath` in `~/.pi/agent/settings.json` at Cygwin or MSYS2.
+
+Run `install.sh` and `bin/redcode` **from Git Bash**, not from PowerShell or cmd.
+
+Two things to know:
+
+- **`Alt+Enter` is fullscreen in Windows Terminal by default.** Remap it, or pi cannot receive the shortcut.
+- **Blast-radius guardrails are Unix-path-shaped.** The protected-prefix list is `/etc`, `/usr`, `/home` and friends. On a Windows path they simply do not match, so nothing is blocked. Treat the guardrails as absent on Windows until that is fixed — the rest of the profile is unaffected.
+- **`install.sh --link` may quietly copy instead.** Git Bash only makes real symlinks with `MSYS=winsymlinks:nativestrict` and Windows developer mode enabled, and it exits 0 either way. The installer checks and tells you when this happened; if it did, re-run `./install.sh` after each `git pull`.
+
+Honest caveat: this has been verified by reading pi's Windows code paths and by removing every POSIX-only assumption from redcode's own scripts — not by running it on a Windows machine. If you are the first to try it, please open an issue with whatever breaks.
+
+Everything else — the theme, `/connect`, modes, the todo list, the compaction bar, the patch — is plain Node and portable. `scripts/pi-patch` resolves pi through `npm root -g` rather than `which`, because a Node script on Windows runs against the Windows PATH even when launched from Git Bash.
+
+---
+
+## Model catalog
+
+An OpenAI-compatible `/v1/models` response gives you three fields: `id`, `object`, `owned_by`. It does not tell a client the context window, whether the model takes images, or which reasoning levels it accepts. pi needs all three, so `extensions/redcode-connect/catalog.ts` holds a small table keyed by model-id prefix.
+
+A model not in the table still works — it gets deliberately timid defaults (32K context, text only, no thinking levels). Pi will compact earlier than necessary and offer no effort ladder, both recoverable. The alternative, assuming a large window and a full ladder, produces rejected prompts and hung turns, which are not.
+
+Correct any of it per-endpoint in `~/.pi/agent/redcode.json`:
+
+```json
+{
+  "endpoints": [
+    {
+      "name": "home",
+      "baseUrl": "https://host.example.ts.net:8449/v1",
+      "apiKey": "sk-…",
+      "models": [
+        { "id": "my-model", "name": "My Model", "contextWindow": 131072, "vision": true }
+      ]
+    }
+  ]
+}
+```
+
+Restart pi after editing it by hand.
+
+---
+
+## Running the server side
+
+redcode is a client. If you want to be the one handing out keys, you need an OpenAI-compatible server that:
+
+- accepts `Authorization: Bearer <key>`, ideally **more than one key**, so a guest key is revocable without rotating your own;
+- is reachable by the people you are sharing with — a Tailscale tailnet is the low-effort answer, and keeps the server off the public internet entirely;
+- round-trips `reasoning_content` on assistant messages if it does prefix caching. Dropping it is a history mutation, and on a server with prefix reuse that means a full re-prefill on every single turn.
+
+Anything OpenAI-compatible works — llama.cpp's server, vLLM, NInfer.
+
+---
+
+## Development
+
+```bash
+npm install        # types only; nothing is compiled
+npm test           # unit tests for every extension
+npm run patch:check
+```
+
+There is no test framework by design. Each test file is a plain script that counts assertions and exits non-zero, running under bare `node --experimental-strip-types`. pi loads `.ts` extensions directly through jiti, so there is no build step either.
+
+Pin TypeScript to 5.x. TypeScript 7 is the Go rewrite and ships no `tsserver`, so editors report "no valid TypeScript installation" while typescript is plainly installed.
+
+---
+
+## License
+
+MIT. See [LICENSE](LICENSE).

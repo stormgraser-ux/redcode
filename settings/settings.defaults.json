@@ -1,0 +1,9 @@
+{
+  "theme": "crimson",
+  "hideThinkingBlock": false,
+  "showCacheMissNotices": true,
+  "doubleEscapeAction": "tree",
+  "tuiMode": "fullscreen",
+  "quietStartup": true,
+  "defaultTools": ["read", "bash", "edit", "write", "grep", "find", "ls"]
+}

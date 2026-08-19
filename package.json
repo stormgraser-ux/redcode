@@ -1,0 +1,22 @@
+{
+  "name": "redcode",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The crimson profile for the pi coding agent: theme, extensions, and a /connect command for private OpenAI-compatible model servers",
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/test.mjs",
+    "patch": "node scripts/pi-patch",
+    "patch:check": "node scripts/pi-patch --check",
+    "patch:test": "node scripts/pi-patch-test.mjs"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@types/node": "^22.10.0",
+    "typescript": "~5.7.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

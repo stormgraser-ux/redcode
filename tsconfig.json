@@ -1,0 +1,22 @@
+{
+  // Editor support only. Nothing here is compiled: pi loads .ts extensions
+  // directly through jiti, and the tests run under node's own type stripping.
+  // `npm install && npx tsc --noEmit` is a lint pass, not a build step.
+  //
+  // Pin typescript to 5.x, not "latest". TypeScript 7 is the Go rewrite and
+  // ships no tsserver, so editors report "no valid TypeScript installation"
+  // while typescript is plainly installed.
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["extensions/**/*.ts", "scripts/**/*.mjs"]
+}

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# redcode — launch pi with the redcode profile.
+#
+# All this does is re-apply the pi patches and hand over to pi. The profile
+# itself lives in ~/.pi/agent (theme, extensions, settings), put there by
+# install.sh, so a plain `pi` gets the same experience — this wrapper exists for
+# the patch step, which has to happen before pi starts.
+#
+# WHY BASH ON WINDOWS TOO. pi already requires bash on Windows (Git Bash is the
+# documented default), so there is exactly one launcher rather than a .ps1 that
+# drifts. Run it from Git Bash.
+#
+# Pass any pi flag straight through:  redcode --provider foo --model bar
+
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if ! command -v pi >/dev/null 2>&1; then
+    echo "redcode: pi is not installed or not on PATH." >&2
+    echo "  npm install -g @earendil-works/pi-coding-agent" >&2
+    exit 1
+fi
+
+# Re-apply the patches to pi's installed dist/ on EVERY launch, because an npm
+# upgrade silently reverts them. Already-patched is a string search costing a
+# few milliseconds, so this is cheaper than remembering. It never blocks the
+# launch: an unpatched pi works fine, it just wastes a generation whenever a
+# long tool chain hits the context wall. See scripts/pi-patch.
+if [[ -f "$here/../scripts/pi-patch" ]]; then
+    node "$here/../scripts/pi-patch" --quiet ||
+        echo "redcode: pi-patch failed; continuing unpatched (see above)" >&2
+fi
+
+exec pi "$@"

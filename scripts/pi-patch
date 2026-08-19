@@ -1,0 +1,363 @@
+#!/usr/bin/env node
+// pi-patch — re-applies the redcode patches to the installed pi coding agent.
+//
+// WHY THIS IS A SCRIPT AND NOT A .patch FILE. Everything in patches/ is a
+// unified diff against a source repo we build ourselves. pi is different: it is
+// an installed npm package whose dist/ is regenerated on every release, so a
+// line-addressed diff would fail on the first upgrade that touches anything
+// nearby. This applies anchored string edits instead, verifies each one landed,
+// and is safe to run repeatedly — the redcode launcher calls it on every launch,
+// so an upgrade self-heals on the next start instead of waiting to be noticed.
+//
+// Exit codes: 0 applied or already present, 1 anchors not found (pi changed
+// shape — read the report and re-derive), 2 pi not installed.
+//
+// Usage:
+//   pi-patch            apply, report what happened
+//   pi-patch --check    report only, never write (exit 1 if unpatched)
+//   pi-patch --quiet    apply, print only on change or failure
+//   pi-patch --revert   restore the .localops-orig backup
+
+import { execFileSync } from "node:child_process";
+import {
+  copyFileSync,
+  existsSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+
+const MARKER = "LOCALOPS-MIDCHAIN-COMPACTION";
+
+const args = new Set(process.argv.slice(2));
+const check = args.has("--check");
+const quiet = args.has("--quiet");
+const revert = args.has("--revert");
+
+function die(msg, code) {
+  console.error(`pi-patch: ${msg}`);
+  process.exit(code);
+}
+
+function say(msg) {
+  if (!quiet) console.log(msg);
+}
+
+// ---------------------------------------------------------------- locate pi
+//
+// Three ways, most explicit first. None of them may assume a Unix shell: this
+// is a Node script, and on Windows it runs against the Windows PATH even when
+// launched from Git Bash. So `which` and `readlink` are not there, and `npm` is
+// `npm.cmd`, which execFile cannot start without a shell.
+const PKG = "@earendil-works/pi-coding-agent";
+
+/** A directory is pi's dist only if the file we patch is in it. */
+function distAt(dir) {
+  return existsSync(join(dir, "core", "agent-session.js")) ? dir : null;
+}
+
+function runCapture(command, commandArgs) {
+  return execFileSync(command, commandArgs, {
+    encoding: "utf8",
+    shell: process.platform === "win32",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+}
+
+function findPiDist() {
+  // 1. An explicit override. Non-standard installs — a bundled binary, a
+  //    vendored checkout, two pi versions side by side — are not worth guessing.
+  if (process.env.REDCODE_PI_DIST) return distAt(resolve(process.env.REDCODE_PI_DIST));
+
+  // 2. The global npm root. This is how pi is normally installed, and the answer
+  //    has the same shape on Linux, macOS and Windows.
+  try {
+    const found = distAt(join(runCapture("npm", ["root", "-g"]).trim(), ...PKG.split("/"), "dist"));
+    if (found) return found;
+  } catch {
+    // npm missing, or slow to answer. Fall through.
+  }
+
+  // 3. Follow `pi` on PATH. Last, because a launcher shim resolves to something
+  //    that is not dist/cli.js — which distAt() then rejects anyway.
+  try {
+    const lookup = process.platform === "win32" ? "where" : "which";
+    const first = runCapture(lookup, ["pi"]).split(/\r?\n/)[0].trim();
+    // realpathSync, not `readlink -f`: same job, no external process, and it
+    // exists on Windows where readlink does not.
+    if (first) return distAt(dirname(realpathSync(first)));
+  } catch {
+    // Nothing on PATH.
+  }
+  return null;
+}
+
+const dist = findPiDist();
+if (!dist) die("could not locate an installed pi (is `pi` on PATH?)", 2);
+
+const pkgPath = resolve(dist, "..", "package.json");
+const version = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf8")).version : "unknown";
+// ------------------------------------------------------------ patch driver
+//
+// Each patch-set is applied INDEPENDENTLY, with its own marker and its own
+// all-or-nothing anchor check. If pi moves the ground under one of them, the
+// others still land: a compaction fix that silently disappears because an
+// unrelated tool file was refactored is exactly the failure this structure
+// exists to prevent.
+
+function fileFor(rel) {
+  return join(dist, ...rel.split("/"));
+}
+
+function applyPatch(patch) {
+  const target = fileFor(patch.file);
+  if (!existsSync(target)) return { name: patch.name, state: "missing", target };
+  const backup = `${target}.localops-orig`;
+  let src = readFileSync(target, "utf8");
+
+  if (revert) {
+    if (!existsSync(backup)) return { name: patch.name, state: "no-backup", target };
+    copyFileSync(backup, target);
+    return { name: patch.name, state: "reverted", target };
+  }
+  if (src.includes(patch.marker)) return { name: patch.name, state: "present", target };
+  if (check) return { name: patch.name, state: "absent", target };
+
+  const failures = [];
+  for (const edit of patch.edits) {
+    const hits = src.split(edit.find).length - 1;
+    if (hits !== 1) {
+      failures.push(`    ${edit.name}: anchor matched ${hits} times (expected 1)`);
+      continue;
+    }
+    src = src.replace(edit.find, edit.replace);
+  }
+  if (failures.length) return { name: patch.name, state: "failed", target, failures };
+
+  // Parse-check BEFORE replacing a working install. A patched file that does
+  // not parse leaves pi unlaunchable, far worse than an unpatched one.
+  const probe = join(tmpdir(), `pi-patch-probe-${process.pid}.mjs`);
+  writeFileSync(probe, src);
+  try {
+    execFileSync(process.execPath, ["--check", probe], { stdio: "pipe" });
+  } catch (err) {
+    unlinkSync(probe);
+    return { name: patch.name, state: "unparsable", target, failures: [`    ${err.message}`] };
+  }
+  unlinkSync(probe);
+
+  if (!existsSync(backup)) copyFileSync(target, backup);
+  // Rename rather than truncate-and-write: another pi may be launching right
+  // now, and a half-written source file is an unlaunchable one.
+  const staged = `${target}.localops-staged`;
+  writeFileSync(staged, src);
+  renameSync(staged, target);
+  return { name: patch.name, state: "applied", target };
+}
+
+// ------------------------------------------------------- the patch itself
+//
+// THE BUG. pi only tests the compaction threshold in two places
+// (_handlePostAgentRun, and prompt()): after a whole agent run finishes, and
+// when the user submits. A long tool-calling chain reaches neither, so context
+// climbs unchecked until the request itself no longer fits. Measured on a
+// 204,800-ctx session: sixteen consecutive `toolUse` messages ran 187,191 ->
+// 200,896 tokens, straight past the 188,416 threshold, and the turn died with
+// `stopReason: "length"` ("Response was truncated before completion."). pi then
+// recovers by compacting and retrying, so nothing is lost — but a full
+// generation is discarded every time.
+//
+// THE FIX. The agent loop already exposes `shouldStopAfterTurn`, called after
+// EVERY turn inside the chain, which ends the run cleanly with `agent_end`.
+// Hook it: when an assistant message stops for `toolUse` and its usage is over
+// the threshold, end the run and set a flag. _handlePostAgentRun then runs the
+// normal auto-compaction with `willRetry: true`, and _runAgentPrompt's
+// `while (await this._handlePostAgentRun()) await this.agent.continue()` resumes
+// the chain — the same machinery the overflow path already uses, just triggered
+// before the wall instead of against it.
+//
+// Raising `compaction.reserveTokens` is NOT an alternative fix. It moves a
+// threshold that was never being evaluated during the chain.
+
+const PATCHES = [
+  {
+    name: "mid-chain compaction",
+    marker: MARKER,
+    file: "core/agent-session.js",
+    edits: [
+
+    {
+      name: "field declaration",
+      find: "    _overflowRecoveryAttempted = false;\n",
+      replace:
+        "    _overflowRecoveryAttempted = false;\n" +
+        `    // ${MARKER}: armed by shouldStopAfterTurn, consumed by _handlePostAgentRun.\n` +
+        "    _midChainCompactionPending = false;\n" +
+        "    // Once per user turn. If compaction cannot run (nothing to compact), we still\n" +
+        "    // resume the chain we interrupted; without this latch that is an infinite\n" +
+        "    // stop/continue loop.\n" +
+        "    _midChainCompactionAttempted = false;\n",
+      once: true,
+    },
+    {
+      name: "install call",
+      find: "        this._installAgentNextTurnRefresh();\n",
+      replace:
+        "        this._installAgentNextTurnRefresh();\n" +
+        "        this._installMidChainCompactionCheck();\n",
+      once: true,
+    },
+    {
+      name: "reset on new user message",
+      find: "            this._overflowRecoveryAttempted = false;\n            const messageText = contentText(event.message.content, \"\");\n",
+      replace:
+        "            this._overflowRecoveryAttempted = false;\n" +
+        "            this._midChainCompactionAttempted = false;\n" +
+        "            const messageText = contentText(event.message.content, \"\");\n",
+      once: true,
+    },
+    {
+      name: "method definition",
+      find: "    _installAgentNextTurnRefresh() {\n",
+      replace:
+        `    /** ${MARKER}\n` +
+        "     *  Test the compaction threshold BETWEEN tool-calling turns, which is the\n" +
+        "     *  only place pi does not already test it. Ending the run here lets the\n" +
+        "     *  existing auto-compaction path run with willRetry, so the chain resumes\n" +
+        "     *  by itself. */\n" +
+        "    _installMidChainCompactionCheck() {\n" +
+        "        const previous = this.agent.shouldStopAfterTurn;\n" +
+        "        this.agent.shouldStopAfterTurn = async (turn, signal) => {\n" +
+        "            if (await previous?.(turn, signal))\n" +
+        "                return true;\n" +
+        "            if (this._midChainCompactionAttempted)\n" +
+        "                return false;\n" +
+        "            const settings = this.settingsManager.getCompactionSettings();\n" +
+        "            if (!settings.enabled)\n" +
+        "                return false;\n" +
+        "            const message = turn?.message;\n" +
+        "            // Only mid-chain. A run that is ending anyway reaches the existing\n" +
+        "            // check in _handlePostAgentRun, and error/length/aborted are the\n" +
+        "            // overflow path's business, not ours.\n" +
+        "            if (!message || message.role !== \"assistant\" || message.stopReason !== \"toolUse\")\n" +
+        "                return false;\n" +
+        "            const contextWindow = this.model?.contextWindow ?? 0;\n" +
+        "            if (!contextWindow)\n" +
+        "                return false;\n" +
+        "            const tokens = message.usage ? calculateContextTokens(message.usage) : 0;\n" +
+        "            if (!tokens || !shouldCompact(tokens, contextWindow, settings))\n" +
+        "                return false;\n" +
+        "            this._midChainCompactionPending = true;\n" +
+        "            this._midChainCompactionAttempted = true;\n" +
+        "            return true;\n" +
+        "        };\n" +
+        "    }\n" +
+        "    _installAgentNextTurnRefresh() {\n",
+      once: true,
+    },
+    {
+      name: "post-run hook",
+      find: "        if (await this._checkCompaction(msg)) {\n            return true;\n        }\n",
+      replace:
+        `        // ${MARKER}: we stopped the chain on purpose, so it must be resumed.\n` +
+        "        if (this._midChainCompactionPending) {\n" +
+        "            this._midChainCompactionPending = false;\n" +
+        "            await this._runAutoCompaction(\"threshold\", true);\n" +
+        "            // Resume even if compaction could not run — otherwise an artificial\n" +
+        "            // stop silently truncates the user's turn. The attempted latch keeps\n" +
+        "            // this from re-arming.\n" +
+        "            return true;\n" +
+        "        }\n" +
+        "        if (await this._checkCompaction(msg)) {\n            return true;\n        }\n",
+      once: true,
+    },
+    ],
+  },
+
+  // ---------------------------------------------------------------------
+  // WRITE-TOOL JSON COERCION
+  //
+  // Qwen 3.8 emits `content` as a nested JSON OBJECT rather than a string
+  // whenever it writes a .json file. Measured three times in one session
+  // (package.json, tsconfig.json, an acceptance report): each one fails
+  // schema validation, and the model then regenerates the whole file body —
+  // so a 2 KB file costs 4 KB of output plus a wasted round trip.
+  //
+  // pi already does exactly this coercion for `edit`, whose prepareArguments
+  // parses `edits` when a model sends it as a JSON string ("Some models
+  // (Opus 4.6, GLM-5.1) send edits as a JSON string instead of an array",
+  // edit.js:43). This is the mirror case for `write`.
+  //
+  // prepareArguments is the right seam because it runs BEFORE
+  // validateToolArguments (agent-loop.js:403-404). The tool_call extension
+  // hook runs after validation and therefore cannot rescue this.
+  {
+    name: "write JSON coercion",
+    marker: "LOCALOPS-WRITE-JSON-COERCION",
+    file: "core/tools/write.js",
+    edits: [
+      {
+        name: "prepareArguments on the write tool",
+        find: "        parameters: writeSchema,\n",
+        replace:
+          "        parameters: writeSchema,\n" +
+          "        // LOCALOPS-WRITE-JSON-COERCION: Qwen 3.8 sends `content` as an\n" +
+          "        // object when writing JSON files. Serialize instead of failing\n" +
+          "        // validation and making it regenerate the entire body.\n" +
+          "        prepareArguments: (input) => {\n" +
+          "            if (!input || typeof input !== \"object\")\n" +
+          "                return input;\n" +
+          "            const c = input.content;\n" +
+          "            if (c === null || typeof c !== \"object\")\n" +
+          "                return input;\n" +
+          "            try {\n" +
+          "                return { ...input, content: `${JSON.stringify(c, null, 2)}\\n` };\n" +
+          "            }\n" +
+          "            catch {\n" +
+          "                return input; // circular: let validation report it\n" +
+          "            }\n" +
+          "        },\n",
+        once: true,
+      },
+    ],
+  },
+];
+
+const results = PATCHES.map(applyPatch);
+
+if (revert) {
+  for (const r of results) console.log(`pi-patch: ${r.name}: ${r.state}`);
+  process.exit(0);
+}
+
+if (check) {
+  const absent = results.filter((r) => r.state !== "present");
+  if (absent.length === 0) {
+    say(`pi-patch: pi ${version} fully patched (${results.length} patch-sets)`);
+    process.exit(0);
+  }
+  console.error(
+    `pi-patch: pi ${version} is missing ${absent.length}/${results.length} patch-sets:\n` +
+      absent.map((r) => `  ${r.name}: ${r.state}`).join("\n"),
+  );
+  process.exit(1);
+}
+
+const broke = results.filter((r) => r.state === "failed" || r.state === "unparsable");
+const applied = results.filter((r) => r.state === "applied");
+
+for (const r of applied) console.log(`pi-patch: applied [${r.name}] to pi ${version}\n  ${r.target}`);
+if (applied.length === 0 && broke.length === 0) say(`pi-patch: pi ${version} already patched`);
+
+if (broke.length) {
+  console.error(
+    `pi-patch: FAILED on pi ${version} — pi's source has moved. Nothing was written for:\n` +
+      broke.map((r) => `  ${r.name} (${r.target})\n${(r.failures || []).join("\n")}`).join("\n") +
+      "\n  Re-derive the anchors and update scripts/pi-patch. See docs/pi-customization.md.",
+  );
+  process.exit(1);
+}

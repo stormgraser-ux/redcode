@@ -1,0 +1,114 @@
+{
+	"$schema": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
+	"name": "crimson",
+
+	"vars": {
+		"redDeep": "#a11d2b",
+		"red": "#c9303f",
+		"redBright": "#e5474f",
+		"redSoft": "#d97a82",
+
+		"blue": "#8fb8de",
+		"blueDeep": "#6f8ba8",
+		"cyan": "#6fb3c4",
+
+		"violet": "#c39ac9",
+		"violetDeep": "#b48ead",
+		"amber": "#e8b04b",
+
+		"text": "#ded5d8",
+		"textBright": "#f2ebed",
+		"muted": "#9a8f94",
+		"dim": "#6b6167",
+		"faint": "#4a3a3e",
+
+		"bgUser": "#241a1d",
+		"bgSelected": "#3a2429",
+		"bgToolPending": "#221c1e",
+		"bgToolSuccess": "#1b2430",
+		"bgToolError": "#331519",
+		"bgCustom": "#241a2b",
+		"bgSearchText": "#1a1416",
+
+		"commentGrey": "#6f6469",
+		"operatorGrey": "#a6989e",
+		"punctGrey": "#8b8085",
+		"magenta": "#d183e8",
+		"magentaHot": "#ff5fff"
+	},
+
+	"colors": {
+		"accent": "red",
+		"text": "text",
+		"muted": "muted",
+		"dim": "dim",
+
+		"borderMuted": "faint",
+		"border": "redSoft",
+		"borderAccent": "redBright",
+
+		"success": "blue",
+		"error": "redBright",
+		"warning": "amber",
+
+		"selectedBg": "bgSelected",
+		"scrollbarThumb": "bgSelected",
+		"searchMatchBg": "amber",
+		"searchMatchText": "bgSearchText",
+
+		"userMessageBg": "bgUser",
+		"userMessageText": "textBright",
+		"customMessageBg": "bgCustom",
+		"customMessageText": "text",
+		"customMessageLabel": "violetDeep",
+
+		"thinkingText": "muted",
+
+		"toolPendingBg": "bgToolPending",
+		"toolSuccessBg": "bgToolSuccess",
+		"toolErrorBg": "bgToolError",
+		"toolTitle": "textBright",
+		"toolOutput": "muted",
+
+		"toolDiffAdded": "blue",
+		"toolDiffRemoved": "redSoft",
+		"toolDiffContext": "dim",
+
+		"mdHeading": "redBright",
+		"mdLink": "blue",
+		"mdLinkUrl": "dim",
+		"mdCode": "amber",
+		"mdCodeBlock": "text",
+		"mdCodeBlockBorder": "faint",
+		"mdQuote": "muted",
+		"mdQuoteBorder": "redDeep",
+		"mdHr": "faint",
+		"mdListBullet": "red",
+
+		"syntaxComment": "commentGrey",
+		"syntaxKeyword": "red",
+		"syntaxFunction": "amber",
+		"syntaxVariable": "text",
+		"syntaxString": "violet",
+		"syntaxNumber": "blue",
+		"syntaxType": "cyan",
+		"syntaxOperator": "operatorGrey",
+		"syntaxPunctuation": "punctGrey",
+
+		"thinkingOff": "faint",
+		"thinkingMinimal": "commentGrey",
+		"thinkingLow": "blueDeep",
+		"thinkingMedium": "blue",
+		"thinkingHigh": "violetDeep",
+		"thinkingXhigh": "magenta",
+		"thinkingMax": "magentaHot",
+
+		"bashMode": "amber"
+	},
+
+	"export": {
+		"pageBg": "#161113",
+		"cardBg": "#1e1719",
+		"infoBg": "#2b1e22"
+	}
+}
