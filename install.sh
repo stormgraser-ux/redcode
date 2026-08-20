@@ -112,6 +112,15 @@ install_one "$REPO/themes/crimson.json" "$THEME_DIR/crimson.json" "theme crimson
 node "$REPO/scripts/merge-settings.mjs" \
     "$PI_DIR/settings.json" "$REPO/settings/settings.defaults.json"
 
+# Keybindings, same merge rules. redcode-modes binds shift+tab, which pi ships
+# bound to app.thinking.cycle; pi refuses an extension shortcut that collides
+# with a live built-in and logs "conflicts with built-in shortcut. Skipping."
+# Unbinding the built-in is what frees the key. This was missing for the first
+# releases and went unnoticed because the developer's own machine had the file
+# by hand — a fresh install got modes with no way to reach them.
+node "$REPO/scripts/merge-settings.mjs" \
+    "$PI_DIR/keybindings.json" "$REPO/settings/keybindings.defaults.json"
+
 # --------------------------------------------------------------------- patches
 if ! node "$REPO/scripts/pi-patch"; then
     say "pi-patch did not apply — redcode still works, see scripts/pi-patch output above"

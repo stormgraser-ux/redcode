@@ -40,8 +40,11 @@ for (const [key, value] of Object.entries(defaults)) {
 }
 
 writeFileSync(target, `${JSON.stringify(current, null, 2)}\n`);
+// Name the file being merged: this runs once per target now, and two
+// consecutive lines both saying "settings" is a puzzle rather than a report.
+const label = target.replace(/^.*[\\/]/, "").replace(/\.json$/, "");
 console.log(
   added.length
-    ? `  settings: added ${added.join(", ")}`
-    : "  settings: already set, nothing changed",
+    ? `  ${label}: added ${added.join(", ")}`
+    : `  ${label}: already set, nothing changed`,
 );
