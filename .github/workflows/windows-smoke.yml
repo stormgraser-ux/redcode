@@ -293,6 +293,16 @@ jobs:
             'redcode — fresh Windows install, by hand'
             '========================================'
             ''
+            '!!  DO NOT CLOSE THE CONSOLE WINDOW  !!'
+            ''
+            'A console window on this desktop is running the countdown.'
+            'That window IS the CI job -- it is not a log viewer. Closing'
+            'it terminates the job and this machine is destroyed within'
+            'seconds, which looks from the other end like the network'
+            'dropped. It is retitled DO-NOT-CLOSE and minimised for that'
+            'reason. To finish early, cancel the run from the GitHub'
+            'Actions tab instead.'
+            ''
             'This machine is pristine. Nothing is installed. Open Git Bash'
             '(Start -> "Git Bash") and work through these:'
             ''
@@ -404,11 +414,29 @@ jobs:
           # input can never be spliced into the script body.
           HOLD_MINUTES: ${{ inputs.desktop-minutes }}
         run: |
+          # This console window is visible on the RDP desktop, and it IS the
+          # job: closing it terminates the run and destroys the machine. From
+          # the client end that is indistinguishable from a network fault,
+          # so it costs a session and a debugging detour. An unlabelled cmd
+          # box full of text is exactly the thing a tidy person closes —
+          # name it, and get it out of the way.
+          $host.UI.RawUI.WindowTitle = 'DO-NOT-CLOSE - closing this destroys the machine'
+          try {
+            $win = Add-Type -PassThru -Name W -Namespace Nat -MemberDefinition '
+              [DllImport("kernel32.dll")] public static extern System.IntPtr GetConsoleWindow();
+              [DllImport("user32.dll")]   public static extern bool ShowWindow(System.IntPtr h, int c);'
+            $h = $win::GetConsoleWindow()
+            if ($h -ne [System.IntPtr]::Zero) { [void]$win::ShowWindow($h, 6) }  # 6 = SW_MINIMIZE
+          } catch {
+            "could not minimise the console window: $($_.Exception.Message)"
+          }
+
           $minutes = 45
           [void][int]::TryParse($env:HOLD_MINUTES, [ref]$minutes)
           $minutes = [Math]::Max(5, [Math]::Min(110, $minutes))
           "Holding this desktop for $minutes minutes."
           "Cancel the run from the Actions tab to release it early."
+          "Do NOT close this window — it is the job, not a log."
           for ($i = $minutes; $i -gt 0; $i--) {
             "$i minute(s) left"
             Start-Sleep -Seconds 60

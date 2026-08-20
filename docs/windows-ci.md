@@ -72,7 +72,13 @@ tailnet, with a mouse — without ever building or maintaining a local VM.
 4. You land on the pristine desktop. There is a `START-HERE.txt` on it with
    the install steps and the Windows-specific things that tend to bite
    (Git Bash vs PowerShell, CRLF checkouts, paths with spaces).
-5. **Cancel the run** when you are done. The clock bills at 2x either way.
+5. **Do not close the console window on that desktop.** It is titled
+   `DO-NOT-CLOSE` and starts minimised, because it is not a log viewer —
+   it is the Actions job itself. Closing it terminates the run and the
+   machine is destroyed within seconds, which from your end looks exactly
+   like the tailnet dropping. Expect to lose a session and some time to
+   this once if you forget.
+6. **Cancel the run** when you are done. The clock bills at 2x either way.
 
 The machine is destroyed at the end of the run. Nothing you do on it
 persists — which is the feature: the next run is pristine again, with no VM
