@@ -86,9 +86,10 @@ the whole risk delta, and it is why the job is opt-in per run:
 
 - **Tag the auth key.** This matters more than the open port. An untagged
   key joins the ephemeral runner as *your user's device*, inheriting your
-  rights across the entire tailnet. Give the key `tag:ci` and write an ACL
-  that lets that tag reach only the model server's port, and a compromised
-  runner can talk to one port instead of roaming.
+  rights across the entire tailnet. Tagged and scoped, a compromised runner
+  reaches one TCP port on one host instead of roaming. See *Scoping the CI
+  tag* below — the rule is short, but there are four ways to write it that
+  do not do what they look like they do.
 - **`RDP_PASSWORD` must be long and random.** The job refuses to start
   under 20 characters. GitHub masks secrets in logs, but masking is
   best-effort and any transform of the value defeats it — so the workflow
@@ -97,6 +98,58 @@ the whole risk delta, and it is why the job is opt-in per run:
 - **The runner is GitHub's computer**, briefly inside your private network.
   Do not sign into anything on it you would not sign into on a stranger's
   laptop. The job deliberately puts no model-server key in its environment.
+
+### Scoping the CI tag
+
+What `tag:ci` actually needs to reach is **one port on one host**: the
+`tailscale serve` front door for the model server (`:8449` here). Not the
+engine's loopback port, not the other engines' ports, not SSH, not anything
+else. The `desktop` job needs *no* outbound tailnet access at all — RDP is
+you reaching **it**, which your own user rule already covers, because `*` as
+a destination includes tagged nodes.
+
+So the addition is one grant:
+
+```jsonc
+{
+  "hosts": {
+    // A bare MagicDNS name is NOT a valid dst. Declare it here (or use the
+    // raw 100.x address) or the policy fails to validate.
+    "model-server": "100.94.137.75"
+  },
+  "tagOwners": {
+    // Prefer your own address over autogroup:admin. Owner and Admin are
+    // separate roles in Tailscale, and you want to be certain you can mint
+    // the key.
+    "tag:ci": ["you@example.com"]
+  },
+  "grants": [
+    // ... your existing grants stay exactly as they are ...
+    { "src": ["tag:ci"], "dst": ["model-server"], "ip": ["tcp:8449"] }
+  ]
+}
+```
+
+Four ways to get this wrong, all of which look fine until they aren't:
+
+1. **`autogroup:member` is wider than `autogroup:owner`, not narrower.** It
+   is every non-shared user in the tailnet, so reaching for it while
+   "tightening" hands every human member whatever you granted. If your
+   policy scopes a rule to `autogroup:owner`, leave it there.
+2. **Only narrow a `src: ["*"]` rule if you actually have one.** `*` does
+   cover tagged nodes, so a wildcard grant would nullify the `tag:ci` scope
+   above — but that wildcard is Tailscale's *starter* policy for a fresh
+   tailnet, not something every tailnet has. Read your live policy before
+   "fixing" it. `autogroup:owner` already excludes tagged devices, since a
+   tagged device has no user identity.
+3. **Add to the policy, do not replace it.** Rules for other people are easy
+   to drop on the floor when you paste a fresh block.
+4. **Shared users are not members.** An external user your tailnet shares a
+   node *out* to is excluded by `autogroup:member`, so a member-scoped rule
+   will not cover them.
+
+Stay in one dialect. `grants` supersedes the legacy `acls` array; they can
+legally coexist, but there is no reason to split one policy across both.
 
 ## One-time setup (for the e2e job)
 
