@@ -110,7 +110,7 @@ export function wrap(s: string, w: number): string[] {
   return lines;
 }
 
-const GAP = 4;
+export const GAP = 4;
 /** Past this a cell wraps rather than widening, so one long path cannot set
  *  the width of the whole frame and maroon every other cell in whitespace. */
 const MAX_CELL = 34;
@@ -206,7 +206,7 @@ export function build(theme: ThemeLike, snap: Snapshot, width: number): string[]
     body.push(c("dim", snap.cwd));
   }
 
-  const cells: Cell[] = [];
+  let cells: Cell[] = [];
   // Where you are, when that is not already implied by a repo line.
   if (snap.repo) cells.push({ title: "cwd", lines: [c("dim", snap.cwd)] });
   // What is auto-loaded into the system prompt before you type anything —
@@ -214,20 +214,50 @@ export function build(theme: ThemeLike, snap: Snapshot, width: number): string[]
   if (snap.context.length) {
     cells.push({ title: "context", lines: snap.context.map((p) => c("dim", p)) });
   }
-  if (snap.notes.length) {
-    cells.push({ title: "notes", lines: snap.notes.map((n) => c("warning", n)) });
+
+  // The frame is sized to its CONTENT, not to the terminal. A box stretched
+  // across a 200-column window puts its right edge out in peripheral vision,
+  // where it reads as a stray vertical line rather than an enclosure — and the
+  // cells inside end up marooned in whitespace.
+  cells = cells.map(reflow);
+  const cellsWidth = cells.length
+    ? cells.reduce((sum, cell) => sum + natural(cell), 0) + GAP * (cells.length - 1)
+    : 0;
+  // Content decides the width, but the terminal gets the final say. Sizing
+  // purely to content is what the original does and it is right on a wide
+  // window — but a 62-column endpoint line in a 40-column terminal then draws
+  // a box wider than the screen, and an over-wide header does not merely look
+  // wrong, it corrupts the TUI's redraw for the rest of the session. Four
+  // columns go to the frame itself ("│ " and " │").
+  const outer = Math.max(0, width - 4);
+  const inner = Math.min(Math.max(...body.map(vis), Math.min(cellsWidth, outer), 40), outer);
+
+  if (cells.length) {
+    body.push("");
+    body.push(c("borderMuted", "─".repeat(inner)));
+    body.push("");
+    body.push(...columns(theme, cells, inner));
   }
 
+  const box = (s: string) => c("borderMuted", s);
   const out = [""];
-  // Clamp every masthead line. The cells are laid out to fit by construction,
-  // but these are free-form and a long host name or branch will happily run
-  // past the frame — and a header line wider than the terminal does not just
-  // look wrong, it corrupts the TUI's redraw for the rest of the session.
-  out.push(...body.map((l) => cut(l, width)));
-  if (cells.length) {
+  const rule = "─".repeat(inner + 2);
+  out.push(box(`╭${rule}╮`));
+  // Every body line is clamped to the inner width. They are free-form — a long
+  // host name or branch runs past the frame otherwise — and a header line wider
+  // than the terminal does not merely look wrong, it corrupts the TUI's redraw
+  // for the rest of the session.
+  for (const line of body) out.push(box("│ ") + pad(cut(line, inner), inner) + box(" │"));
+  out.push(box(`╰${rule}╯`));
+
+  // Notes live OUTSIDE the frame on purpose. Inside, a note is one more panel
+  // among several and reads as status; outside and unboxed it breaks the shape
+  // of the thing, which is what something being wrong should do.
+  if (snap.notes.length) {
     out.push("");
-    out.push(...columns(theme, cells.map(reflow), width));
+    for (const n of snap.notes) out.push(c("warning", cut(`  ! ${n}`, width)));
   }
+
   out.push("");
   return out;
 }

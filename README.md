@@ -53,6 +53,8 @@ If the probe fails, `/connect` says which layer failed — DNS, connection refus
 
 **Modes on shift+tab** — normal / discussion / plan. Discussion withholds the editing tools so you can think out loud without the agent quietly rewriting your files. Plan mode investigates, asks you the real judgement calls as dialogs, then writes a plan to `.pi/plans/` and offers to implement it in a fresh session.
 
+**Per-turn telemetry under the command line** — decode rate, time to first token, and output size, measured by the client rather than read from any server's log. Both timings start at the first *content* delta, not the first byte: servers routinely emit a `message_start` frame before prefilling anything, and timing from the first byte folds the whole prefill into what you then call the decode rate — reporting ~40 tok/s for a model doing ~124. A rate that is still climbing is coloured differently from a settled one.
+
 **A visible plan checklist** (`redcode-todo`) whose steps cannot silently move. The failure it exists for: an agent writes a six-step plan, does step one, and then quietly re-scopes the rest.
 
 **A compaction progress bar** with an elapsed timer and a time-remaining estimate. Against a local model compaction routinely runs 60–120 seconds, and pi's built-in spinner gives you no way to tell a slow compaction from a wedged one. The bar is a *fitted prediction*, not a token count — summarization bypasses the agent loop, so only the start and the end are observable from an extension. It calibrates itself against your last dozen compactions.
