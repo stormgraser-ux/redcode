@@ -156,7 +156,9 @@ jobs:
         uses: tailscale/github-action@v4
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-          # If the auth key carries a tag, pass it here:  tags: tag:ci
+          # The auth key is tagged, so the node joins as tag:ci and gets
+          # only the grant scoped to it — not your user's rights.
+          tags: tag:ci
 
       - name: Verify the endpoint answers from the tailnet
         shell: pwsh
@@ -249,7 +251,30 @@ jobs:
         uses: tailscale/github-action@v4
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-          # If the auth key carries a tag, pass it here:  tags: tag:ci
+          # The auth key is tagged, so the node joins as tag:ci and gets
+          # only the grant scoped to it — not your user's rights.
+          tags: tag:ci
+
+      - name: What this node can actually see
+        shell: pwsh
+        run: |
+          # An ACL failure is silent in the direction that matters: a node
+          # with too MUCH access looks identical to one scoped correctly,
+          # until something goes wrong. Tailscale filters the netmap by
+          # policy, so the peer list is the observable proof. A correctly
+          # scoped tag:ci should see the model server and very little else
+          # — if your phone and your NAS are in this list, the grant is not
+          # biting and the tag bought you nothing.
+          $ts = "C:\Program Files\Tailscale\tailscale.exe"
+          $st = & $ts status --json | ConvertFrom-Json
+          $tags = $st.Self.Tags
+          if ($tags) { "this node is tagged: $($tags -join ', ')" }
+          else {
+            Write-Warning "THIS NODE IS UNTAGGED — it joined as your user and inherited your rights across the whole tailnet. The auth key is not tagged, or tags: was not passed."
+          }
+          $peers = @($st.Peer.PSObject.Properties.Value)
+          "visible peers: $($peers.Count)"
+          $peers | ForEach-Object { "  {0,-24} {1}" -f $_.HostName, $_.TailscaleIPs[0] }
 
       - name: Turn on Remote Desktop for the runner account
         shell: pwsh
