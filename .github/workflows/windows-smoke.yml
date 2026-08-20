@@ -255,58 +255,6 @@ jobs:
           # only the grant scoped to it — not your user's rights.
           tags: tag:ci
 
-      - name: What this node can actually see
-        shell: pwsh
-        run: |
-          # An ACL failure is silent in the direction that matters: a node
-          # with too MUCH access looks identical to one scoped correctly,
-          # until something goes wrong. Tailscale filters the netmap by
-          # policy, so the peer list is the observable proof. A correctly
-          # scoped tag:ci should see the model server and very little else
-          # — if your phone and your NAS are in this list, the grant is not
-          # biting and the tag bought you nothing.
-          $ts = "C:\Program Files\Tailscale\tailscale.exe"
-          $st = & $ts status --json | ConvertFrom-Json
-          $tags = $st.Self.Tags
-          if ($tags) { "this node is tagged: $($tags -join ', ')" }
-          else {
-            Write-Warning "THIS NODE IS UNTAGGED — it joined as your user and inherited your rights across the whole tailnet. The auth key is not tagged, or tags: was not passed."
-          }
-          $peers = @($st.Peer.PSObject.Properties.Value)
-          "visible peers: $($peers.Count)"
-          $peers | ForEach-Object { "  {0,-24} {1}" -f $_.HostName, $_.TailscaleIPs[0] }
-
-          # Visibility is NOT reachability. Tailscale populates the peer list
-          # partly for connectivity setup, so a correctly scoped node can
-          # still SEE names the packet filter will not let it talk to. The
-          # only way to tell a working grant from a broken one is to open a
-          # socket, so probe every visible peer on a couple of ports and let
-          # the result speak.
-          #
-          # Expected on a correctly scoped tag:ci: the model server's serve
-          # port is the single OPEN result, everything else refused or timed
-          # out. Anything else open means some other rule still covers
-          # tagged nodes.
-          function Probe($ip, $port) {
-            $c = New-Object System.Net.Sockets.TcpClient
-            try {
-              if ($c.ConnectAsync($ip, $port).Wait(3000) -and $c.Connected) { return "OPEN" }
-              return "blocked"
-            } catch { return "blocked" }
-            finally { $c.Dispose() }
-          }
-          ""
-          "reachability probe (3s timeout each):"
-          foreach ($p in $peers) {
-            if (-not $p.Online) { continue }
-            $ip = $p.TailscaleIPs[0]
-            foreach ($port in 8449, 22, 445, 5000, 80) {
-              $r = Probe $ip $port
-              if ($r -eq "OPEN") { "  {0,-24} {1,-6} {2}" -f $p.HostName, $port, $r }
-            }
-          }
-          "  (only OPEN results are listed; silence below a host means nothing answered)"
-
       - name: Turn on Remote Desktop for the runner account
         shell: pwsh
         env:
@@ -390,6 +338,58 @@ jobs:
           "  The machine is PRISTINE — nothing is installed. That is the"
           "  point. There is a START-HERE.txt on the desktop."
           "==================================================================="
+
+      - name: What this node can actually see
+        shell: pwsh
+        run: |
+          # An ACL failure is silent in the direction that matters: a node
+          # with too MUCH access looks identical to one scoped correctly,
+          # until something goes wrong. Tailscale filters the netmap by
+          # policy, so the peer list is the observable proof. A correctly
+          # scoped tag:ci should see the model server and very little else
+          # — if your phone and your NAS are in this list, the grant is not
+          # biting and the tag bought you nothing.
+          $ts = "C:\Program Files\Tailscale\tailscale.exe"
+          $st = & $ts status --json | ConvertFrom-Json
+          $tags = $st.Self.Tags
+          if ($tags) { "this node is tagged: $($tags -join ', ')" }
+          else {
+            Write-Warning "THIS NODE IS UNTAGGED — it joined as your user and inherited your rights across the whole tailnet. The auth key is not tagged, or tags: was not passed."
+          }
+          $peers = @($st.Peer.PSObject.Properties.Value)
+          "visible peers: $($peers.Count)"
+          $peers | ForEach-Object { "  {0,-24} {1}" -f $_.HostName, $_.TailscaleIPs[0] }
+
+          # Visibility is NOT reachability. Tailscale populates the peer list
+          # partly for connectivity setup, so a correctly scoped node can
+          # still SEE names the packet filter will not let it talk to. The
+          # only way to tell a working grant from a broken one is to open a
+          # socket, so probe every visible peer on a couple of ports and let
+          # the result speak.
+          #
+          # Expected on a correctly scoped tag:ci: the model server's serve
+          # port is the single OPEN result, everything else refused or timed
+          # out. Anything else open means some other rule still covers
+          # tagged nodes.
+          function Probe($ip, $port) {
+            $c = New-Object System.Net.Sockets.TcpClient
+            try {
+              if ($c.ConnectAsync($ip, $port).Wait(1500) -and $c.Connected) { return "OPEN" }
+              return "blocked"
+            } catch { return "blocked" }
+            finally { $c.Dispose() }
+          }
+          ""
+          "reachability probe (1.5s timeout each):"
+          foreach ($p in $peers) {
+            if (-not $p.Online) { continue }
+            $ip = $p.TailscaleIPs[0]
+            foreach ($port in 8449, 22, 445, 5000, 80) {
+              $r = Probe $ip $port
+              if ($r -eq "OPEN") { "  {0,-24} {1,-6} {2}" -f $p.HostName, $port, $r }
+            }
+          }
+          "  (only OPEN results are listed; silence below a host means nothing answered)"
 
       - name: Hold the machine open
         shell: pwsh
