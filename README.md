@@ -67,6 +67,8 @@ If the probe fails, `/connect` says which layer failed — DNS, connection refus
 
 **`/cd`** moves a live session to another project directory with its full history: tools, AGENTS.md, skills, and trust all rebind. Set `REDCODE_PROJECTS` if your projects do not live in `~/code`.
 
+**`/btw <question>`** — a one-shot side question that never enters the main conversation. It forks the session's effective context and re-sends the exact prefix the session last used — same system prompt, messages, tools, and thinking level — so the engine's prefix cache means only the appended question is prefilled. The answer streams into a pinned overlay on top of the output (it captures focus, so esc closes it without touching the main turn — and esc while it is still streaming cancels the side call); the Q&A is also recorded as a transcript entry that never re-enters LLM context and renders nowhere in the transcript — the overlay is the only visible `/btw` output, and a bare `/btw` re-shows the last answer from that entry in the same dismissible panel. The tools stay in the rendered prompt on purpose (stripping them would break the cache); the side call simply has no tool executor, so nothing can run even if the model emits a call. It uses the engine's second concurrency lane, so you can ask while the main turn is still streaming.
+
 **Muscle-memory aliases** — `/clear` and `/exit` for people arriving from Claude Code. Additive; pi's `/new` and `/quit` keep working.
 
 **Smaller things** — bash tool calls collapse under ctrl+o like every other tool; the agent is told its bash tool already runs in the working directory, which stops it prefixing `cd <cwd> &&` onto most commands; per-request payload sizes are logged so you can see what is actually filling your context.
