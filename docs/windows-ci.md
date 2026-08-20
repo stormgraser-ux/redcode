@@ -13,6 +13,7 @@ workflow splits by cost:
 |---|---|---|---|
 | `install-smoke` (Node 22 **and** 24) | every push/PR to `main` | none | fresh install: `npm i -g pi`, `install.sh` under Git Bash, unit tests, `pi-patch`, and one full round trip of real pi + real profile + real client against the bundled mock server |
 | `e2e` | "Run workflow" with **run-e2e** checked | yes | the same, but the runner joins your tailnet and the round trip goes to your real model server with a real key — TLS, tailnet DNS, and the model's actual request shape included |
+| `desktop` | "Run workflow" with **run-desktop** checked | yes | nothing, automatically. It installs *nothing* and hands you the pristine machine over Remote Desktop so you can drive the install by hand and watch it — see *Driving the install by hand* |
 
 On **failure** of a manually-dispatched run, `mxschmitt/action-tmate` starts a
 tmate session on the still-alive runner and prints the connection string in
@@ -41,15 +42,61 @@ node scripts/mock-openai.mjs & # or point at your server
 ./scripts/windows-smoke.sh smoke
 ```
 
-The `e2e` runner joins your tailnet and does show up in `tailscale status` on
-your machine, but **RDP to it does not work as shipped**: GitHub's Windows
-image has Remote Desktop off and the `runneradmin` account has no usable
-password, and no step here changes either. tmate is the interactive path.
-Turning on a real desktop means adding a step that sets a password on
-`runneradmin` and flips `fDenyTSConnections` — deliberately not in this
-workflow, because it puts a password-authenticated desktop inside your
-tailnet for the length of a CI run. See *Driving the install by hand* below
-for the safer way to get a fresh Windows desktop.
+tmate is the interactive path for a *failed* run. To drive a machine
+deliberately, use the `desktop` job below — the `e2e` runner has Remote
+Desktop off and no usable password on `runneradmin`, so it is not reachable
+that way.
+
+## Driving the install by hand
+
+The point of the `desktop` job: a genuinely fresh Windows machine, on your
+tailnet, with a mouse — without ever building or maintaining a local VM.
+
+1. **Actions → Windows smoke → Run workflow**, tick **run-desktop**, set
+   **desktop-minutes** (default 45), run it.
+2. Wait for the *Where to connect* step to print an address (about a
+   minute).
+3. On your Linux box:
+
+   ```sh
+   redcode-ci-desktop            # finds the runner on the tailnet
+   redcode-ci-desktop 100.x.y.z  # or name it explicitly
+   ```
+
+   That wrapper reads the password from
+   `~/.config/redcode/ci-rdp-password` and feeds it to FreeRDP on **stdin** —
+   never as `/p:<password>`, because argv is world-readable through `ps`.
+   GitHub secrets cannot be read back, so that local file is the only
+   readable copy of `RDP_PASSWORD`; rotate the two together or you get a
+   bare auth failure with no explanation.
+4. You land on the pristine desktop. There is a `START-HERE.txt` on it with
+   the install steps and the Windows-specific things that tend to bite
+   (Git Bash vs PowerShell, CRLF checkouts, paths with spaces).
+5. **Cancel the run** when you are done. The clock bills at 2x either way.
+
+The machine is destroyed at the end of the run. Nothing you do on it
+persists — which is the feature: the next run is pristine again, with no VM
+image rotting on your disk between attempts.
+
+### What this costs you, in security terms
+
+The `desktop` job makes the runner **listen** on 3389 on a tailnet
+interface. `tmate` never listens at all — it dials out. That difference is
+the whole risk delta, and it is why the job is opt-in per run:
+
+- **Tag the auth key.** This matters more than the open port. An untagged
+  key joins the ephemeral runner as *your user's device*, inheriting your
+  rights across the entire tailnet. Give the key `tag:ci` and write an ACL
+  that lets that tag reach only the model server's port, and a compromised
+  runner can talk to one port instead of roaming.
+- **`RDP_PASSWORD` must be long and random.** The job refuses to start
+  under 20 characters. GitHub masks secrets in logs, but masking is
+  best-effort and any transform of the value defeats it — so the workflow
+  never echoes it, not even partially.
+- **NLA stays on**, so an unauthenticated peer cannot open a session at all.
+- **The runner is GitHub's computer**, briefly inside your private network.
+  Do not sign into anything on it you would not sign into on a stranger's
+  laptop. The job deliberately puts no model-server key in its environment.
 
 ## One-time setup (for the e2e job)
 
@@ -68,6 +115,7 @@ for the safer way to get a fresh Windows desktop.
    | `REDCODE_BASE_URL` | exactly what you put in `/connect`, e.g. `https://host.your-tailnet.ts.net:8449/v1` |
    | `REDCODE_API_KEY` | a key for that server. Use a dedicated revocable CI key if your server supports several — the key never leaves the runner (it is written to `redcode.json` on the ephemeral VM and used in-process) |
    | `REDCODE_MODEL` | *(optional)* model id to test; default is the first model the server lists |
+   | `RDP_PASSWORD` | *(only for the `desktop` job)* a long random password for `runneradmin`. Keep a readable copy at `~/.config/redcode/ci-rdp-password` — GitHub will not give it back to you |
 
 3. **ACL.** The ephemeral runner node must be able to reach the model
    server. On a default-ACL tailnet (all of your devices talk to each

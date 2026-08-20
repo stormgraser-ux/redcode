@@ -6,7 +6,7 @@
 # about never having been run on a real machine, and a local VM is worse at
 # simulating it (state accumulates the moment you install anything).
 #
-# Two jobs:
+# Three jobs:
 #
 #   install-smoke   always, on push/PR. Fresh image -> Node (22 and 24) ->
 #                   npm -g pi -> Git Bash ./install.sh -> unit tests ->
@@ -17,6 +17,12 @@
 #                   runner joins your tailnet and the round trip goes to your
 #                   real model server with a real key. This is the one that
 #                   needs secrets — see docs/windows-ci.md.
+#
+#   desktop         on "Run workflow" with run-desktop checked. Installs
+#                   nothing: joins the tailnet, turns on Remote Desktop, and
+#                   holds the pristine machine open so you can drive the
+#                   install by hand and watch it. Read the security note
+#                   above that job before enabling it.
 #
 # On failure either test job ends in mxschmitt/action-tmate: a ~30 minute
 # window in which the still-alive runner hands you a shell, so a red run can
@@ -43,6 +49,14 @@ on:
         description: "Round trip against the real model server over the tailnet (needs the secrets from docs/windows-ci.md)"
         type: boolean
         default: false
+      run-desktop:
+        description: "Hold a pristine Windows desktop open on the tailnet over RDP, so you can drive the install by hand"
+        type: boolean
+        default: false
+      desktop-minutes:
+        description: "How long to hold that desktop open, in minutes (5-110, billed at 2x)"
+        type: string
+        default: "45"
 
 permissions:
   contents: read
@@ -175,3 +189,166 @@ jobs:
           # This runner holds a live key to your model server and sits inside
           # your tailnet. Never drop limit-access-to-actor from this one.
           limit-access-to-actor: true
+
+  # ---------------------------------------------------------------------
+  # A fresh Windows machine you drive yourself, with your eyes.
+  #
+  # Installs nothing. It joins the tailnet, turns on Remote Desktop, drops a
+  # crib sheet on the desktop, and then waits. Connect from any tailnet box
+  # and you are sitting at the exact pristine machine a first-time reader of
+  # the README gets — then follow the README by hand and watch every step
+  # succeed or fail. Cancel the run when you are done.
+  #
+  # SECURITY. Read this before enabling it.
+  #
+  #   * This makes the runner LISTEN on 3389 on a tailnet interface. Every
+  #     other node on your tailnet can reach it. tmate, by contrast, is an
+  #     outbound tunnel that listens for nothing. This is the real difference
+  #     between the two, and it is why this job is opt-in per run.
+  #   * Give the Tailscale auth key a TAG (tag:ci) and write an ACL that
+  #     lets that tag reach only your model server's port. Untagged, the
+  #     ephemeral runner joins as YOUR user and inherits your rights across
+  #     the whole tailnet — a much bigger deal than the open 3389.
+  #   * RDP_PASSWORD must be long and random. It is a repo secret, so GitHub
+  #     masks it in logs, but masking is best-effort and any transform of the
+  #     value defeats it. Never echo it, even partially.
+  #   * Network Level Authentication stays ON. It is what keeps an unauthed
+  #     peer from opening a session at all.
+  #   * The runner is a shared-tenancy VM that belongs to GitHub, temporarily
+  #     inside your private network. Do not sign into anything on it that you
+  #     would not sign into on a stranger's laptop.
+  #   * No model-server secrets are put in this job's environment on purpose.
+  #     You are here to test the install path, and /connect will ask you for
+  #     an endpoint interactively — which is the flow you actually want to
+  #     watch anyway.
+  # ---------------------------------------------------------------------
+  desktop:
+    name: pristine desktop, held open on the tailnet
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run-desktop == true }}
+    runs-on: windows-latest
+    # Hard ceiling enforced by the runner. The hold loop stops before this.
+    timeout-minutes: 120
+    steps:
+      - name: Check the secrets are actually set
+        shell: pwsh
+        env:
+          TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          $missing = @()
+          if (-not $env:TS_AUTHKEY)   { $missing += "TAILSCALE_AUTHKEY" }
+          if (-not $env:RDP_PASSWORD) { $missing += "RDP_PASSWORD" }
+          if ($missing.Count -gt 0) {
+            throw "Missing repository secrets: $($missing -join ', '). See docs/windows-ci.md."
+          }
+          if ($env:RDP_PASSWORD.Length -lt 20) {
+            throw "RDP_PASSWORD is under 20 characters. This password fronts a desktop on your tailnet — regenerate it long and random."
+          }
+
+      - name: Join the tailnet
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          # If the auth key carries a tag, pass it here:  tags: tag:ci
+
+      - name: Turn on Remote Desktop for the runner account
+        shell: pwsh
+        env:
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          # runneradmin is the account this job already runs as, and it is a
+          # local administrator. It has no usable password until we set one.
+          net user runneradmin "$env:RDP_PASSWORD" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "could not set the runneradmin password" }
+
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+            -Name fDenyTSConnections -Value 0
+
+          # Network Level Authentication ON. The port is tailnet-only, but NLA
+          # is what stops a peer opening a session before authenticating.
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+            -Name UserAuthentication -Value 1
+
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-Service  -Name TermService -StartupType Automatic
+          Start-Service -Name TermService
+          "Remote Desktop is up for user 'runneradmin'."
+
+      - name: Leave a crib sheet on the desktop
+        shell: pwsh
+        run: |
+          # So you are not alt-tabbing to the README on another machine.
+          $desktop = [Environment]::GetFolderPath('Desktop')
+          $lines = @(
+            'redcode — fresh Windows install, by hand'
+            '========================================'
+            ''
+            'This machine is pristine. Nothing is installed. Open Git Bash'
+            '(Start -> "Git Bash") and work through these:'
+            ''
+            '  1. node --version          # the image ships one; if missing,'
+            '                             # install Node LTS from nodejs.org'
+            ''
+            '  2. npm install -g @earendil-works/pi-coding-agent'
+            '     pi --version'
+            ''
+            '  3. git clone https://github.com/stormgraser-ux/redcode.git'
+            '     cd redcode'
+            '     ./install.sh'
+            ''
+            '  4. pi'
+            '     /connect                # paste your endpoint + key here'
+            '     then ask it something.'
+            ''
+            'What to watch for, in order of how likely it is to bite:'
+            '  - install.sh must run under GIT BASH, not PowerShell or CMD.'
+            '  - a path with a space in it (this account has none, a real'
+            '    user might).'
+            '  - CRLF: git may check the repo out with Windows line endings'
+            '    and bash then fails on the shebang. Symptom is a weird'
+            '    "\r: command not found".'
+            '  - the profile lands in %USERPROFILE%\.pi\agent — check it.'
+            ''
+            'This machine is DESTROYED when the workflow run ends. Nothing'
+            'you do here persists. Cancel the run from the Actions tab when'
+            'you are finished, so you stop paying for it.'
+          )
+          $lines | Set-Content -Path (Join-Path $desktop 'START-HERE.txt') -Encoding UTF8
+          "crib sheet written to the desktop"
+
+      - name: Where to connect
+        shell: pwsh
+        run: |
+          $ts = "C:\Program Files\Tailscale\tailscale.exe"
+          $ip = (& $ts ip -4 | Select-Object -First 1).Trim()
+          $name = ((& $ts status --json | ConvertFrom-Json).Self.DNSName).TrimEnd('.')
+          "==================================================================="
+          "  Remote Desktop to:  $ip"
+          "  or by name:         $name"
+          "  User:               runneradmin"
+          "  Password:           your RDP_PASSWORD repo secret"
+          ""
+          "  From Linux:"
+          "    xfreerdp3 /v:$ip /u:runneradmin /dynamic-resolution +clipboard"
+          ""
+          "  The machine is PRISTINE — nothing is installed. That is the"
+          "  point. There is a START-HERE.txt on the desktop."
+          "==================================================================="
+
+      - name: Hold the machine open
+        shell: pwsh
+        env:
+          # Passed via env rather than inline interpolation, so the dispatch
+          # input can never be spliced into the script body.
+          HOLD_MINUTES: ${{ inputs.desktop-minutes }}
+        run: |
+          $minutes = 45
+          [void][int]::TryParse($env:HOLD_MINUTES, [ref]$minutes)
+          $minutes = [Math]::Max(5, [Math]::Min(110, $minutes))
+          "Holding this desktop for $minutes minutes."
+          "Cancel the run from the Actions tab to release it early."
+          for ($i = $minutes; $i -gt 0; $i--) {
+            "$i minute(s) left"
+            Start-Sleep -Seconds 60
+          }
+          "Time is up — the runner is being destroyed."
