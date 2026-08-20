@@ -62,7 +62,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-smoke-${{ github.ref }}
+  # Pushes supersede each other — a run against stale code is worthless.
+  # Manual runs must NOT share that fate: the desktop job is a machine
+  # someone is sitting in front of, and a push to master would yank it out
+  # from under them mid-session (observed: a session died 75 seconds in,
+  # looking exactly like a network fault). Give every dispatch its own
+  # group so nothing can cancel it but the person who started it.
+  group: windows-smoke-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'push' }}
   cancel-in-progress: true
 
 jobs:
