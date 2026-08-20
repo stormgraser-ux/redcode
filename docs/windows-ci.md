@@ -14,14 +14,23 @@ workflow splits by cost:
 | `install-smoke` (Node 22 **and** 24) | every push/PR to `main` | none | fresh install: `npm i -g pi`, `install.sh` under Git Bash, unit tests, `pi-patch`, and one full round trip of real pi + real profile + real client against the bundled mock server |
 | `e2e` | "Run workflow" with **run-e2e** checked | yes | the same, but the runner joins your tailnet and the round trip goes to your real model server with a real key — TLS, tailnet DNS, and the model's actual request shape included |
 
-On **failure** of either job, `mxschmitt/action-tmate` starts a tmate session
-on the still-alive runner and prints the connection string in the Checks tab.
-You then have ~30 minutes of a real Windows shell:
+On **failure** of a manually-dispatched run, `mxschmitt/action-tmate` starts a
+tmate session on the still-alive runner and prints the connection string in
+the Checks tab. You then have ~30 minutes of a real Windows shell:
 
 ```sh
 pacman -S tmate        # on your Linux box, if you don't have it
 tmate <host> <password>
 ```
+
+tmate is pinned to `limit-access-to-actor: true`, so only the GitHub account
+that dispatched the run can attach, authenticating with that account's SSH
+keys. **This repo is public and Actions logs are world-readable** — without
+that pin the printed connection string is an open shell to anyone watching a
+red run, and on the tailnet-joined `e2e` runner that shell is inside your
+tailnet holding a live key to your model server. For the same reason tmate
+only arms on `workflow_dispatch`: a failing pull request from a stranger's
+fork must not hand its author a session.
 
 There is also a web terminal URL in the same log section. On a Git Bash
 runner you can also start the profile by hand to watch it fail:
@@ -32,9 +41,15 @@ node scripts/mock-openai.mjs & # or point at your server
 ./scripts/windows-smoke.sh smoke
 ```
 
-The `e2e` runner is on your tailnet, so you can instead RDP to it from any
-tailnet box: the runner's hostname appears as `<name>.ts.net` in
-`tailscale status` on your machine.
+The `e2e` runner joins your tailnet and does show up in `tailscale status` on
+your machine, but **RDP to it does not work as shipped**: GitHub's Windows
+image has Remote Desktop off and the `runneradmin` account has no usable
+password, and no step here changes either. tmate is the interactive path.
+Turning on a real desktop means adding a step that sets a password on
+`runneradmin` and flips `fDenyTSConnections` — deliberately not in this
+workflow, because it puts a password-authenticated desktop inside your
+tailnet for the length of a CI run. See *Driving the install by hand* below
+for the safer way to get a fresh Windows desktop.
 
 ## One-time setup (for the e2e job)
 

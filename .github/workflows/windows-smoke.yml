@@ -18,13 +18,17 @@
 #                   real model server with a real key. This is the one that
 #                   needs secrets — see docs/windows-ci.md.
 #
-# On failure either job ends in mxschmitt/action-tmate: a ~30 minute window
-# in which the still-alive runner hands you a shell (or, for e2e, a full
-# desktop over the tailnet — RDP to its <name>.ts.net from any tailnet box),
-# so a red run can be poked at instead of guessed at.
+# On failure either test job ends in mxschmitt/action-tmate: a ~30 minute
+# window in which the still-alive runner hands you a shell, so a red run can
+# be poked at instead of guessed at. This repo is PUBLIC and Actions logs are
+# world-readable, so tmate is pinned to limit-access-to-actor: only the
+# GitHub account that triggered the run can attach, using its account SSH
+# keys. Without that, the connection string in a failed public run is an open
+# shell for anyone watching — and on a tailnet-joined runner that shell is
+# inside your tailnet.
 #
 # Windows minutes burn at 2x on GitHub-hosted runners, so keep the triggers
-# as-is: automatic for the cheap mock job, manual for the tailnet job.
+# as-is: automatic for the cheap mock job, manual for the tailnet jobs.
 
 name: Windows smoke
 
@@ -92,9 +96,12 @@ jobs:
           & 'C:\Program Files\Git\bin\bash.exe' ./scripts/windows-smoke.sh smoke
 
       - name: tmate — interactive shell on this runner while it still exists
-        if: ${{ failure() }}
+        if: ${{ failure() && github.event_name == 'workflow_dispatch' }}
         uses: mxschmitt/action-tmate@v3
         timeout-minutes: 30
+        with:
+          # Public repo: the connection string is world-readable in the log.
+          limit-access-to-actor: true
 
   e2e:
     name: real server over the tailnet
@@ -160,7 +167,11 @@ jobs:
         run: |
           & 'C:\Program Files\Git\bin\bash.exe' ./scripts/windows-smoke.sh smoke
 
-      - name: "tmate — interactive shell (this runner is on the tailnet; RDP to its <name>.ts.net if you want a full desktop)"
+      - name: "tmate — interactive shell (this runner is on the tailnet)"
         if: ${{ failure() }}
         uses: mxschmitt/action-tmate@v3
         timeout-minutes: 30
+        with:
+          # This runner holds a live key to your model server and sits inside
+          # your tailnet. Never drop limit-access-to-actor from this one.
+          limit-access-to-actor: true
