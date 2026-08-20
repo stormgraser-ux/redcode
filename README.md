@@ -49,6 +49,8 @@ If the probe fails, `/connect` says which layer failed — DNS, connection refus
 
 **`/connect`** — private model endpoints, described above.
 
+**A header that says what this session is** — the crimson masthead, then which endpoint is answering and which model, the repo and branch with its dirty and ahead counts, where you are, and which `AGENTS.md` / `CLAUDE.md` files were auto-loaded into the system prompt before you typed anything. It reads the endpoint pi actually selected via `defaultProvider` rather than assuming the most recently added one, and says so when those disagree. A fresh install with no endpoint yet gets told to run `/connect` instead of a blank space. It is a static snapshot of how the session began — `/header` re-takes it, `/builtin-header` restores pi's own.
+
 **Modes on shift+tab** — normal / discussion / plan. Discussion withholds the editing tools so you can think out loud without the agent quietly rewriting your files. Plan mode investigates, asks you the real judgement calls as dialogs, then writes a plan to `.pi/plans/` and offers to implement it in a fresh session.
 
 **A visible plan checklist** (`redcode-todo`) whose steps cannot silently move. The failure it exists for: an agent writes a six-step plan, does step one, and then quietly re-scopes the rest.
