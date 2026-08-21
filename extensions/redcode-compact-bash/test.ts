@@ -1,5 +1,13 @@
 // Run:
 //   node --experimental-strip-types test.ts
+
+import {
+  DEFAULT_TIMEOUT_S,
+  LONG_DEFAULT_TIMEOUT_S,
+  LONG_MAX_TIMEOUT_S,
+  MAX_TIMEOUT_S,
+  resolveTimeout,
+} from "./timeout.ts";
 import { isShort, summarise } from "./summarise.ts";
 
 const HEREDOC_CASE = [
@@ -42,5 +50,42 @@ for (const [name, command, , hidden] of cases) {
   else fails.push(`  ${name}: isShort disagreed with summarise`);
 }
 
-console.log(`${pass}/${cases.length * 2} passed`);
+// --- timeout policy -------------------------------------------------------
+// The property that matters: nothing is ever unbounded. Everything else is
+// about not strangling the jobs that legitimately take an hour.
+const timeoutCases: [name: string, command: string, requested: unknown, expected: number][] = [
+  ["omitted becomes the default", "ls -la", undefined, DEFAULT_TIMEOUT_S],
+  ["the 2382s hang is now bounded", "cd /x && node --experimental-strip-types overlay.test.ts", undefined, DEFAULT_TIMEOUT_S],
+  ["a sane value is honoured", "sleep 30", 30, 30],
+  ["1700s is clamped", "sleep 2000", 1700, MAX_TIMEOUT_S],
+  ["120000s is clamped", "sleep 2000", 120000, MAX_TIMEOUT_S],
+  ["zero is treated as absent", "ls", 0, DEFAULT_TIMEOUT_S],
+  ["a string is treated as absent", "ls", "60", DEFAULT_TIMEOUT_S],
+  ["NaN is treated as absent", "ls", Number.NaN, DEFAULT_TIMEOUT_S],
+  ["long tool gets the long default", "make -j8", undefined, LONG_DEFAULT_TIMEOUT_S],
+  ["long tool still capped", "make -j8", 999999, LONG_MAX_TIMEOUT_S],
+  ["long tool honours a smaller value", "ninja -C build", 300, 300],
+  ["long tool after cd", "cd ~/src/project/build && ninja app", undefined, LONG_DEFAULT_TIMEOUT_S],
+  ["long tool behind sudo", "sudo pacman -Syu", undefined, LONG_DEFAULT_TIMEOUT_S],
+  ["long tool with env prefix", "CUDA_VISIBLE_DEVICES=0 ffmpeg -i in.mov out.mp4", undefined, LONG_DEFAULT_TIMEOUT_S],
+  ["absolute path is matched", "/usr/local/bin/rsync -a src/ dst/", undefined, LONG_DEFAULT_TIMEOUT_S],
+  ["long tool later in a pipeline", "cat x | ffmpeg -i - out.mp4", undefined, LONG_DEFAULT_TIMEOUT_S],
+  ["quick git is NOT long", "git status", undefined, DEFAULT_TIMEOUT_S],
+  ["git clone IS long", "git clone https://example/x.git", undefined, LONG_DEFAULT_TIMEOUT_S],
+  ["node is never long", "node server.js", undefined, DEFAULT_TIMEOUT_S],
+  ["merely naming a tool is not enough", "echo ninja > /tmp/x", undefined, DEFAULT_TIMEOUT_S],
+];
+for (const [name, command, requested, expected] of timeoutCases) {
+  const got = resolveTimeout(command, requested);
+  if (got.timeout === expected) pass++;
+  else fails.push(`  ${name}: expected ${expected}s, got ${got.timeout}s`);
+}
+
+// The invariant, stated directly.
+const unbounded = timeoutCases.filter(([, c, r]) => !Number.isFinite(resolveTimeout(c, r).timeout));
+if (unbounded.length === 0) pass++;
+else fails.push(`  ${unbounded.length} command(s) resolved to an unbounded timeout`);
+
+const total = cases.length * 2 + timeoutCases.length + 1;
+console.log(`${pass}/${total} passed`);
 if (fails.length) { console.log("FAILURES:\n" + fails.join("\n")); process.exit(1); }
