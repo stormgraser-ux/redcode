@@ -42,7 +42,7 @@
 // verbatim, and calling `todo` again appends a fresh copy at the frontier,
 // which is cache-free by construction.
 //
-// Set LOCALOPS_TODO_REMINDER=1 to restore the old behaviour on a backend that
+// Set REDCODE_TODO_REMINDER=1 to restore the old behaviour on a backend that
 // truncates to a common prefix (llama.cpp does). Do not set it for NInfer.
 
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -53,7 +53,7 @@ import { appendNudge, planNudge, type NudgeState } from "./nudge.ts";
 import { env } from "node:process";
 
 /** See the header: injecting this costs a full re-prefill on NInfer. */
-const REMINDER = env.LOCALOPS_TODO_REMINDER === "1";
+const REMINDER = env.REDCODE_TODO_REMINDER === "1";
 
 interface Details {
   todos: Item[];
@@ -226,7 +226,7 @@ export default function (pi: ExtensionAPI) {
   // The rule to preserve if this is ever edited: only ever append to the tool
   // result being generated RIGHT NOW. The moment this reaches backwards for an
   // earlier message, it becomes the thing that cost 70s a turn.
-  const NUDGE_AFTER = Number(env.LOCALOPS_TODO_NUDGE_AFTER ?? 10);
+  const NUDGE_AFTER = Number(env.REDCODE_TODO_NUDGE_AFTER ?? 10);
   const nudgeState: NudgeState = { since: 0 };
 
   pi.on("tool_result", (event: any) => {

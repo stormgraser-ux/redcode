@@ -8,17 +8,25 @@
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 // This file is run directly by node, not resolved through pi's own module
 // graph, so the bare specifier that works inside index.ts does not resolve
-// here. Point at the copy in the repo's node_modules, the same way the other
-// tests that need pi's own code do.
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const { createEditToolDefinition } = await import(
-  resolve(repoRoot, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "index.js")
-);
+// here. Two lookups, because this same file runs from two different trees:
+// inside the repo there is a node_modules beside it, and on a machine that
+// installed the extensions elsewhere there is not — but there, node itself is
+// pi's bundled runtime, so the package sits next to the interpreter. Neither
+// path shells out to `which`, which is not a program on Windows.
+import { createRequire } from "node:module";
+const PKG = "@earendil-works/pi-coding-agent";
+function locatePi(): string {
+  try {
+    return createRequire(import.meta.url).resolve(PKG);
+  } catch {
+    return resolve(dirname(process.execPath), "..", "lib", "node_modules", PKG, "dist", "index.js");
+  }
+}
+const { createEditToolDefinition } = await import(locatePi());
+
 import { classify, findCandidates, occurrenceLines, report, skeleton, whitespaceOnlyDifference } from "./recover.ts";
 
 let pass = 0;

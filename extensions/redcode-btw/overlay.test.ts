@@ -11,12 +11,22 @@
 //
 // Run:  node --experimental-strip-types extensions/redcode-btw/overlay.test.ts
 //       (also discovered and run by `npm test`)
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..", "..");
-const piPkg = resolve(repoRoot, "node_modules", "@earendil-works", "pi-coding-agent");
+// This test runs from two trees: the public repo, which has a node_modules
+// beside it, and the author's checkout, which does not — but there, node is
+// pi's own bundled runtime and the package sits next to the interpreter. Try
+// both rather than assuming either; `which pi` is not an option, because it is
+// not a program on Windows.
+const piPkg = [
+  resolve(repoRoot, "node_modules", "@earendil-works", "pi-coding-agent"),
+  resolve(dirname(process.execPath), "..", "lib", "node_modules",
+          "@earendil-works", "pi-coding-agent"),
+].find((p) => existsSync(p))!;
 
 // Aliases mirror pi's dist/core/extensions/loader.js getAliases().
 const aliases = {

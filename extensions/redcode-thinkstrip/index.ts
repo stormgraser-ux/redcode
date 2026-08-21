@@ -11,19 +11,19 @@
 // other modes WOULD save on the current conversation, so the trade can be
 // re-examined with real numbers instead of re-litigated from intuition.
 //
-//   LOCALOPS_REASONING_ECHO=all     (default) keep everything
-//   LOCALOPS_REASONING_ECHO=turns   Qwen's published rule: drop reasoning from
+//   REDCODE_REASONING_ECHO=all     (default) keep everything
+//   REDCODE_REASONING_ECHO=turns   Qwen's published rule: drop reasoning from
 //                                   completed user turns, keep the in-flight
 //                                   tool chain. Costs one re-prefill per user
 //                                   turn; saves little in an autonomous run.
-//   LOCALOPS_REASONING_ECHO=none    drop all reasoning. Against guidance.
+//   REDCODE_REASONING_ECHO=none    drop all reasoning. Against guidance.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { env } from "node:process";
 import { type EchoMode, parseMode, stripReasoning } from "./strip.ts";
 
 export default function (pi: ExtensionAPI) {
-  const mode: EchoMode = parseMode(env.LOCALOPS_REASONING_ECHO);
+  const mode: EchoMode = parseMode(env.REDCODE_REASONING_ECHO);
 
   // Always measured, even in `all`, so the saving is a number rather than an
   // argument. Peak rather than sum: the same reasoning is re-sent every
