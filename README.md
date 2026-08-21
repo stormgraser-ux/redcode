@@ -85,7 +85,7 @@ If the probe fails, `/connect` says which layer failed — DNS, connection refus
 
 **Muscle-memory aliases** — `/clear` and `/exit` for people arriving from Claude Code. Additive; pi's `/new` and `/quit` keep working.
 
-**Smaller things** — bash tool calls collapse under ctrl+o like every other tool; the agent is told its bash tool already runs in the working directory, which stops it prefixing `cd <cwd> &&` onto most commands; per-request payload sizes are logged so you can see what is actually filling your context.
+**Smaller things** — bash tool calls collapse under ctrl+o like every other tool; the agent is told its bash tool already runs in the working directory, which stops it prefixing `cd <cwd> &&` onto most commands; per-request payload sizes are logged so you can see what is actually filling your context (`REDCODE_REQSIZE_DUMP_ALL=1` keeps the payloads themselves); and `retry.provider.maxRetries` is set to 0, because pi's provider-level retry is the OpenAI SDK's own silent default of 2 — against a server that admits one request at a time, that re-queues whole payloads behind the turn you are waiting on and turns one slow turn into three.
 
 ### The pi patch
 

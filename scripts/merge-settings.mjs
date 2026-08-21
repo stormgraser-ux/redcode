@@ -31,13 +31,26 @@ if (existsSync(target)) {
   copyFileSync(target, `${target}.pre-redcode`);
 }
 
+// Absent means absent at any depth. A shallow pass would skip
+// `retry.provider.maxRetries` for anyone who already has a `retry` block, and
+// that key is the one that matters most: pi's provider retry layer is the
+// OpenAI SDK's own silent default of 2, which re-queues whole payloads behind
+// a single-slot engine's admission and turns one slow turn into three.
+// Existing values still win — this only fills holes.
 const added = [];
-for (const [key, value] of Object.entries(defaults)) {
-  if (current[key] === undefined) {
-    current[key] = value;
-    added.push(key);
+function fill(target, source, prefix) {
+  for (const [key, value] of Object.entries(source)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+    if (target[key] === undefined) {
+      target[key] = value;
+      added.push(path);
+    } else if (isPlainObject(value) && isPlainObject(target[key])) {
+      fill(target[key], value, path);
+    }
   }
 }
+fill(current, defaults, "");
 
 writeFileSync(target, `${JSON.stringify(current, null, 2)}\n`);
 // Name the file being merged: this runs once per target now, and two

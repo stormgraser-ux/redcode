@@ -131,7 +131,15 @@ export default function (pi: ExtensionAPI) {
     }
     last = s;
 
-    const dumped = s.images > 0 ? dump(event.payload, "media") : null;
+    // REDCODE_REQSIZE_DUMP_ALL=1 dumps text-only turns too. Off by default
+    // (a busy session would write a dump per turn); set it when auditing what
+    // actually occupies the prompt.
+    const dumped =
+      s.images > 0
+        ? dump(event.payload, "media")
+        : process.env.REDCODE_REQSIZE_DUMP_ALL === "1"
+          ? dump(event.payload, "text")
+          : null;
 
     write({
       kind: "request",
