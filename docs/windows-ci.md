@@ -121,7 +121,7 @@ So the addition is one grant:
   "hosts": {
     // A bare MagicDNS name is NOT a valid dst. Declare it here (or use the
     // raw 100.x address) or the policy fails to validate.
-    "model-server": "100.94.137.75"
+    "model-server": "100.101.102.103"   // your host's own 100.x address
   },
   "tagOwners": {
     // Prefer your own address over autogroup:admin. Owner and Admin are
