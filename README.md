@@ -81,6 +81,8 @@ If the probe fails, `/connect` says which layer failed — DNS, connection refus
 
 **Double-tap escape clears the command line.** The gesture was free: with text typed and nothing running, escape does nothing at all in pi. It never seizes the key — a raw input listener declines and lets the real handler run — so aborting a turn, aborting a bash call, and the double-escape tree selector all keep working. It stays out of the way entirely while a turn is streaming, because that is when escape means "abort" and pi restores your queued messages into the editor as part of it.
 
+**`/goal`** — keep working until a condition is met, with no evaluator model. `--verify "npm test"` runs after every turn and exit 0 ends the run; that is the trustworthy signal, because a model declaring itself finished is the weakest one available. For work no command can check, the model writes a sentinel line instead. Turn and minute ceilings bound it either way.
+
 **Muscle-memory aliases** — `/clear` and `/exit` for people arriving from Claude Code. Additive; pi's `/new` and `/quit` keep working.
 
 **Smaller things** — bash tool calls collapse under ctrl+o like every other tool; the agent is told its bash tool already runs in the working directory, which stops it prefixing `cd <cwd> &&` onto most commands; per-request payload sizes are logged so you can see what is actually filling your context.
