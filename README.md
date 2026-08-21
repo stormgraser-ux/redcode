@@ -63,6 +63,8 @@ If the probe fails, `/connect` says which layer failed — DNS, connection refus
 
 **Blast-radius guardrails** — a destructive command is judged by how much it can destroy, measured as path depth below an anchor like your home or project directory, not by which tool ran it. `rm -rf ~/code` is refused, `rm -rf ~/code/project/build` runs. This never prompts: prompt fatigue is the failure mode it is designed around. *Unix paths only for now — see [Windows](#windows).*
 
+**Web content cannot reach root in the same session.** The first command that pulls from a public host taints the session, and from then on `sudo`, `pkexec`, `doas`, `su` and `runuser` are refused until you start a new one. A single command that does *both* — the model really does emit `webfetch https://example.com; sudo -n id` as one call — is refused outright, because ordering is no defence when the fetch half may be a redirect chain that resolves at run time. Loopback, private-LAN and tailnet addresses deliberately do not taint; if every fetch counted, a session would taint in seconds and the rule would be noise. `/trust-status` says where the taint came from, `/trust-reset` clears it after you have looked at what came back. This is advisory, not a kernel boundary: it constrains the agent, not you.
+
 **A clickable "jump to latest" button** when you have scrolled back.
 
 **`/effort`** to change the thinking level in one keystroke, offering only the levels your model actually accepts. An unsupported reasoning level returns a 400 that pi silently retries, so the turn **hangs** rather than erroring — the filter is what makes that impossible.
